@@ -8,13 +8,17 @@
 clean:
 	@rm -rf build
 
-.PHONY: build
-build:
+.PHONY: cmake
+cmake:
 	@mkdir -p build
 	@cd build && cmake ..
+
+.PHONY: build
+build:
+	@make cmake
 	@make -j 12 -C build all
 
 .PHONY: test
 test:
 	@make build
-	@build/tests/test
+	@for test in build/tests/test*; do $$test; done
