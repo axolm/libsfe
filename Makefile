@@ -1,24 +1,27 @@
-# run:
-# 	mkdir -p build
-# 	${CXX} -g -o build/libsfe.so src/sfe.cpp -ldl -shared -fPIC
-# 	${CXX} -g src/test.cpp -ldl -lsfe -Lbuild -o build/test
-# 	LD_LIBRARY_PATH=build ./build/test
-# 	# LD_PRELOAD=./build/libsfe.so ./build/test
-
 clean:
 	@rm -rf build
 
-.PHONY: cmake
-cmake:
-	@mkdir -p build
-	@cd build && cmake ..
+build-release:
+	# TODO
 
-.PHONY: build
-build:
-	@make cmake
-	@make -j 12 -C build all
+build-internal:
+	@mkdir -p ${BUILD_DIR}
+	@cd ${BUILD_DIR} && cmake ${CURDIR} $(CMAKE_OPTS_INTERNAL)
+	@make -j12 -C ${BUILD_DIR} all
+
+test-one = CMAKE_OPTS_INTERNAL=$2 BUILD_DIR=build/$1 make build-internal && build/$1/tests/test
+
+# export AVAILABLE_COMPILERS ?= g++
+export AVAILABLE_COMPILERS ?= g++-10 clang++-10
+# export CHECK_STANDARDS ?= c++17 # TODO
 
 .PHONY: test
 test:
-	@make build
-	@for test in build/tests/test*; do $$test; done
+
+	$(foreach CXX, ${AVAILABLE_COMPILERS}, \
+		$(call test-one,test_${CXX},"-DCMAKE_CXX_COMPILER=${CXX}") && \
+		$(call test-one,test_sanitizers_${CXX},"-DSANITIZE_ENABLE=ON -DCMAKE_CXX_COMPILER=${CXX}"); \
+	)
+
+# @$(call test-one,test)
+# @$(call test-one,test_sanitizers,-DSANITIZE_ENABLE=ON)

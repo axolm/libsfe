@@ -1,7 +1,10 @@
 #include <catch.hpp>
 
-#include <bits/stdc++.h>
 #include <sfe/sfe.hpp>
+
+#include <iostream>
+#include <stdexcept>
+#include <utility>
 
 template <typename Func>
 void PassDifferentTypes(Func&& func) {
