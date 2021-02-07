@@ -1,14 +1,25 @@
-add_library(catch_main ../contrib/catch2/catch_main.cpp)
+include(CheckIncludeFileCXX)
 
-add_executable(test test.cpp)
-target_include_directories(test PUBLIC ../contrib/catch2)
+include_directories(../contrib/catch2)
+link_libraries(catch2)
+link_libraries(sfe_basic)
+link_libraries(dl)
 
-target_link_libraries(test catch_main)
-target_link_libraries(test dl)
-target_link_libraries(test sfe_shared)
+# https://github.com/boostorg/stacktrace/issues/59
 
+# check_include_file_cxx("backtrace.h" HAS_BACKTRACE_LIBRARY) # doesn't work
+# if (HAS_BACKTRACE_LIBRARY)
+if (NOT COMPILER_CLANG)
 
-if(SANITIZE_ENABLE)
-    target_compile_options(test INTERFACE -fsanitize=address,undefined)
-    # target_link_libraries(test asan)
+    link_libraries(backtrace dl)
+    add_compile_definitions(BOOST_STACKTRACE_USE_BACKTRACE)
 endif()
+
+add_executable(test_libsfe_basic test_libsfe_basic.cpp)
+add_executable(test_libsfe_preload test_libsfe_preload.cpp)
+
+
+# if(SANITIZE_ENABLE)
+#     target_compile_options(test_libsfe INTERFACE -fsanitize=address,undefined)
+#     # target_link_libraries(test asan)
+# endif()

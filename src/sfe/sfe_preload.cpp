@@ -107,14 +107,15 @@ inline void* get_current_exception_raw_ptr() {
 
 }  // namespace
 
-extern const sfe::stacktrace& get_current_exception_stacktrace() {
+extern const sfe::stacktrace* get_current_exception_stacktrace() {
   void* exc_raw_ptr = get_current_exception_raw_ptr();
   if (!exc_raw_ptr) {
-    throw sfe::no_stacktrace_error(
-        "cannot get trace because null exception ptr");
+    return nullptr;
+    // throw sfe::no_stacktrace_error(
+    //     "cannot get trace because null exception ptr");
   }
   auto* exception_header = cxa_exception_from_thrown_object(exc_raw_ptr);
-  return *static_cast<sfe::stacktrace*>(
+  return static_cast<sfe::stacktrace*>(
       (void*)((char*)exception_header - sizeof(sfe::stacktrace)));
 }
 
