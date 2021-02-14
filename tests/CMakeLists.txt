@@ -24,6 +24,8 @@ endif()
 add_executable(test_libsfe_basic test_libsfe_basic.cpp)
 add_executable(test_libsfe_preload test_libsfe_preload.cpp)
 
+add_executable(test_libsfe_preload_v3 test_libsfe_preload_v3.cpp)
+
 # target_compile_definitions(test_libsfe_preload PUBLIC BOOST_STACKTRACE_DYN_LINK)
 # target_link_libraries(test_libsfe_preload boost_stacktrace_backtrace dl)
 

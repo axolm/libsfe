@@ -27,13 +27,13 @@ void CheckSymbolsInLambda(const sfe::stacktrace& stacktrace) {
 
   {
     static const std::regex kRegex{
-        R"(^operator\(\)<.*>.*test_libsfe_preload\.cpp:\d+$)"};
+        R"(^operator\(\)<.*>.*test_libsfe_preload_v3\.cpp:\d+$)"};
     REQUIRE(std::regex_match(ToStr(vector_ref[0]), kRegex));
   }
 
   {
     static const std::regex kRegex{
-        R"(^PassDifferentTypes.*test_libsfe_preload\.cpp:\d+$)"};
+        R"(^PassDifferentTypes.*test_libsfe_preload_v3\.cpp:\d+$)"};
     REQUIRE(std::regex_match(ToStr(vector_ref[1]), kRegex));
   }
 
@@ -49,7 +49,7 @@ void CheckSymbolsInLambda(const sfe::stacktrace& stacktrace) {
 void CheckSymbolsMultithread(const sfe::stacktrace& stacktrace) {
 #ifdef BOOST_STACKTRACE_USE_BACKTRACE
   auto str = ToStr(stacktrace);
-  REQUIRE(str.find("test_libsfe_preload.cpp") != std::string::npos);
+  REQUIRE(str.find("test_libsfe_preload_v3.cpp") != std::string::npos);
   REQUIRE(str.find("libc") != std::string::npos);
 #else
   std::ignore = stacktrace;
@@ -74,14 +74,14 @@ TEST_CASE("Basic") {
     try {
       throw std::forward<ExcType>(arg);
     } catch (ExcType& exc) {
-      auto* trace_ptr = sfe::get_current_exception_stacktrace();
-      REQUIRE(trace_ptr);
-      REQUIRE(*trace_ptr);
-      CheckSymbolsInLambda(*trace_ptr);
-      REQUIRE(*trace_ptr == *sfe::get_current_exception_stacktrace());
+      auto trace_opt = sfe::get_current_exception_stacktrace_v3();
+      REQUIRE(trace_opt);
+      REQUIRE(*trace_opt);
+      CheckSymbolsInLambda(*trace_opt);
+      REQUIRE(*trace_opt == *sfe::get_current_exception_stacktrace_v3());
     }
 
-    REQUIRE(!sfe::get_current_exception_stacktrace());
+    REQUIRE(!sfe::get_current_exception_stacktrace_v3());
   };
 
   PassDifferentTypes(lambda_test);
@@ -95,17 +95,17 @@ TEST_CASE("WithRethrow") {
     try {
       throw std::forward<ExcType>(arg);
     } catch (ExcType& exc) {
-      REQUIRE(*sfe::get_current_exception_stacktrace());
+      REQUIRE(*sfe::get_current_exception_stacktrace_v3());
       ptr = std::current_exception();
-      REQUIRE(*sfe::get_current_exception_stacktrace());
+      REQUIRE(*sfe::get_current_exception_stacktrace_v3());
     }
 
     try {
       std::rethrow_exception(ptr);
     } catch (...) {
-      CheckSymbolsInLambda(*sfe::get_current_exception_stacktrace());
+      CheckSymbolsInLambda(*sfe::get_current_exception_stacktrace_v3());
     }
-    REQUIRE(!sfe::get_current_exception_stacktrace());
+    REQUIRE(!sfe::get_current_exception_stacktrace_v3());
   };
 
   PassDifferentTypes(lambda_test);
@@ -117,24 +117,24 @@ TEST_CASE("DeepThrow") {
 
     sfe::stacktrace trace1, trace2, trace3;
 
-    REQUIRE(!sfe::get_current_exception_stacktrace());
+    REQUIRE(!sfe::get_current_exception_stacktrace_v3());
     try {
       try {
         try {
           throw std::forward<ExcType>(arg);
         } catch (ExcType& exc) {
-          trace1 = *sfe::get_current_exception_stacktrace();
+          trace1 = *sfe::get_current_exception_stacktrace_v3();
           throw;
         }
       } catch (ExcType& exc) {
-        trace2 = *sfe::get_current_exception_stacktrace();
+        trace2 = *sfe::get_current_exception_stacktrace_v3();
         throw exc;
       }
     } catch (...) {
-      trace3 = *sfe::get_current_exception_stacktrace();
+      trace3 = *sfe::get_current_exception_stacktrace_v3();
     }
 
-    REQUIRE(!sfe::get_current_exception_stacktrace());
+    REQUIRE(!sfe::get_current_exception_stacktrace_v3());
 
     REQUIRE(trace1);
     REQUIRE(trace2);
@@ -159,11 +159,11 @@ TEST_CASE("Multithread test") {
     while (not start.load())
       ;  // spin lock
     for (size_t i = 0; i < 30; ++i) {
-      REQUIRE(!sfe::get_current_exception_stacktrace());
+      REQUIRE(!sfe::get_current_exception_stacktrace_v3());
       try {
         throw std::runtime_error("some error");
       } catch (const std::exception& exc) {
-        CheckSymbolsMultithread(*sfe::get_current_exception_stacktrace());
+        CheckSymbolsMultithread(*sfe::get_current_exception_stacktrace_v3());
       }
     }
   };
@@ -222,7 +222,7 @@ TEST_CASE("Multithread test with queue") {
     try {
       std::rethrow_exception(exc_ptr);
     } catch (const std::exception& exc) {
-      CheckSymbolsMultithread(*sfe::get_current_exception_stacktrace());
+      CheckSymbolsMultithread(*sfe::get_current_exception_stacktrace_v3());
     }
   };
 
@@ -230,7 +230,7 @@ TEST_CASE("Multithread test with queue") {
     while (not start.load())
       ;  // spin lock
     for (size_t i = 0; i < 50; ++i) {
-      REQUIRE(!sfe::get_current_exception_stacktrace());
+      REQUIRE(!sfe::get_current_exception_stacktrace_v3());
       if (std::uniform_int_distribution<int>(0, 1)(Generator())) {
         push();
       } else {
