@@ -97,11 +97,9 @@ namespace {
 using __cxxabiv1::__cxa_exception;
 using __cxxabiv1::cxa_exception_from_thrown_object;
 
-// TODO
 inline void* get_current_exception_raw_ptr() {
-  // https://nda.ya.ru/t/ngbQH_OG3hhH2U
   auto exc_ptr = std::current_exception();
-  void* exc_raw_ptr = *static_cast<void**>((void*)&exc_ptr);  // UB?
+  void* exc_raw_ptr = *static_cast<void**>((void*)&exc_ptr);  // TODO
   return exc_raw_ptr;
 }
 
@@ -111,8 +109,6 @@ extern const sfe::stacktrace* get_current_exception_stacktrace() {
   void* exc_raw_ptr = get_current_exception_raw_ptr();
   if (!exc_raw_ptr) {
     return nullptr;
-    // throw sfe::no_stacktrace_error(
-    //     "cannot get trace because null exception ptr");
   }
   auto* exception_header = cxa_exception_from_thrown_object(exc_raw_ptr);
   return static_cast<sfe::stacktrace*>(

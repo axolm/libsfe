@@ -1,30 +1,22 @@
 #include <sfe/sfe.hpp>
 
-#include "cxa_exception.h"
-
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
 #include <exception>
-#include <iostream>
-#include <typeinfo>
+#include <mutex>
 #include <unordered_map>
 
 #include <cxxabi.h>
-
 #include <dlfcn.h>
 
 namespace {
-// TODO: Make thread safe. `thread_local` will not work
-std::unordered_map<void*, sfe::stacktrace*> stacktrace_by_exc;
+
+std::unordered_map<void*, sfe::stacktrace> stacktrace_by_exc;
+std::mutex map_mutex;
 thread_local bool already_in_allocate_exception = false;
+
 }  // namespace
 
 namespace __cxxabiv1 {
-
 extern "C" {
-
-typedef void* (*orig_cxa_allocate_exception_t)(size_t);
 
 extern void* __cxa_allocate_exception(size_t thrown_size) throw() {
   if (already_in_allocate_exception) {  // for `bad_alloc`
@@ -32,19 +24,28 @@ extern void* __cxa_allocate_exception(size_t thrown_size) throw() {
   }
   already_in_allocate_exception = true;
 
-  orig_cxa_allocate_exception_t orig_cxa_allocate_exception =
-      (orig_cxa_allocate_exception_t)dlsym(RTLD_NEXT,
-                                           "__cxa_allocate_exception");
+  typedef void* (*cxa_allocate_exception_t)(size_t);
+  auto orig_cxa_allocate_exception =
+      (cxa_allocate_exception_t)dlsym(RTLD_NEXT, "__cxa_allocate_exception");
 
-  void* user_obj_ptr =
-      orig_cxa_allocate_exception(thrown_size + sizeof(sfe::stacktrace));
+  void* user_obj_ptr = orig_cxa_allocate_exception(thrown_size);
 
-  sfe::stacktrace* stacktrace_ptr =
-      reinterpret_cast<sfe::stacktrace*>((char*)user_obj_ptr + thrown_size);
+  // void* user_obj_ptr =
+  //     orig_cxa_allocate_exception(thrown_size + sizeof(sfe::stacktrace));
+  // sfe::stacktrace* stacktrace_ptr =
+  //     reinterpret_cast<sfe::stacktrace*>((char*)user_obj_ptr + thrown_size);
 
-  new (stacktrace_ptr) sfe::stacktrace(1, -1);
+  auto trace = sfe::stacktrace(1, -1);
 
-  stacktrace_by_exc[user_obj_ptr] = stacktrace_ptr;
+  {
+    std::lock_guard<std::mutex> lg{map_mutex};
+    auto it = stacktrace_by_exc.find(user_obj_ptr);
+    if (it == stacktrace_by_exc.end()) {
+      stacktrace_by_exc.emplace(user_obj_ptr, std::move(trace));
+    } else {
+      it->second = std::move(trace);
+    }
+  }
 
   return already_in_allocate_exception = false, user_obj_ptr;
 }
@@ -55,11 +56,10 @@ namespace sfe {
 
 namespace {
 
-// TODO
 inline void* get_current_exception_raw_ptr() {
-  // https://nda.ya.ru/t/ngbQH_OG3hhH2U
+  // https://github.com/gcc-mirror/gcc/blob/16e2427f50c208dfe07d07f18009969502c25dc8/libstdc%2B%2B-v3/libsupc%2B%2B/eh_ptr.cc#L147
   auto exc_ptr = std::current_exception();
-  void* exc_raw_ptr = *static_cast<void**>((void*)&exc_ptr);  // UB?
+  void* exc_raw_ptr = *static_cast<void**>((void*)&exc_ptr);  // TODO
   return exc_raw_ptr;
 }
 
@@ -71,8 +71,12 @@ extern const sfe::stacktrace* get_current_exception_stacktrace() {
     return nullptr;
   }
 
-  // returns nullptr if no
-  return stacktrace_by_exc[exc_raw_ptr];
+  std::lock_guard<std::mutex> lg{map_mutex};
+  auto it = stacktrace_by_exc.find(exc_raw_ptr);
+  if (it == stacktrace_by_exc.end()) {
+    return nullptr;
+  }
+  return &it->second;
 }
 
 }  // namespace sfe

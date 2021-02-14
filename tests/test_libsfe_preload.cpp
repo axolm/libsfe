@@ -2,39 +2,55 @@
 
 #include <sfe/sfe.hpp>
 
+#include <atomic>
 #include <iostream>
+#include <mutex>
+#include <queue>
+#include <random>
+#include <regex>
 #include <stdexcept>
+#include <thread>
 #include <utility>
 
-#include <regex>
+namespace {
+template <typename T>
+std::string ToStr(T&& arg) {
+  std::ostringstream ss;
+  ss << std::forward<T>(arg);
+  REQUIRE(ss);
+  return std::move(ss).str();
+}
 
-void CheckNames(const sfe::stacktrace& stacktrace) {
+void CheckSymbolsInLambda(const sfe::stacktrace& stacktrace) {
 #ifdef BOOST_STACKTRACE_USE_BACKTRACE
   const auto& vector_ref = stacktrace.as_vector();
-
-  auto to_str = [](const auto& arg) {
-    std::ostringstream ss;
-    ss << arg;
-    REQUIRE(ss);
-    return std::move(ss).str();
-  };
 
   {
     static const std::regex kRegex{
         R"(^operator\(\)<.*>.*test_libsfe_preload\.cpp:\d+$)"};
-    REQUIRE(std::regex_match(to_str(vector_ref[0]), kRegex));
+    REQUIRE(std::regex_match(ToStr(vector_ref[0]), kRegex));
   }
 
   {
     static const std::regex kRegex{
         R"(^PassDifferentTypes.*test_libsfe_preload\.cpp:\d+$)"};
-    REQUIRE(std::regex_match(to_str(vector_ref[1]), kRegex));
+    REQUIRE(std::regex_match(ToStr(vector_ref[1]), kRegex));
   }
 
-  auto str = to_str(stacktrace);
+  auto str = ToStr(stacktrace);
   REQUIRE(str.find(" main ") != std::string::npos);
   REQUIRE(str.find("libc") != std::string::npos);
 
+#else
+  std::ignore = stacktrace;
+#endif
+}
+
+void CheckSymbolsMultithread(const sfe::stacktrace& stacktrace) {
+#ifdef BOOST_STACKTRACE_USE_BACKTRACE
+  auto str = ToStr(stacktrace);
+  REQUIRE(str.find("test_libsfe_preload.cpp") != std::string::npos);
+  REQUIRE(str.find("libc") != std::string::npos);
 #else
   std::ignore = stacktrace;
 #endif
@@ -50,6 +66,7 @@ void PassDifferentTypes(Func && func) {
   // func("abacaba");
   func(sfe::stacktrace{});
 }
+}  // namespace
 
 TEST_CASE("Basic") {
   auto lambda_test = [](auto&& arg) {
@@ -60,13 +77,11 @@ TEST_CASE("Basic") {
       auto* trace_ptr = sfe::get_current_exception_stacktrace();
       REQUIRE(trace_ptr);
       REQUIRE(*trace_ptr);
-      CheckNames(*trace_ptr);
+      CheckSymbolsInLambda(*trace_ptr);
       REQUIRE(*trace_ptr == *sfe::get_current_exception_stacktrace());
     }
 
     REQUIRE(!sfe::get_current_exception_stacktrace());
-    // REQUIRE_THROWS_AS(sfe::get_current_exception_stacktrace(),
-    //                   sfe::no_stacktrace_error);
   };
 
   PassDifferentTypes(lambda_test);
@@ -88,12 +103,10 @@ TEST_CASE("WithRethrow") {
     try {
       std::rethrow_exception(ptr);
     } catch (...) {
-      auto trace = *sfe::get_current_exception_stacktrace();
-      CheckNames(trace);
+      const auto& trace = *sfe::get_current_exception_stacktrace();
+      CheckSymbolsInLambda(trace);
     }
     REQUIRE(!sfe::get_current_exception_stacktrace());
-    // REQUIRE_THROWS_AS(*sfe::get_current_exception_stacktrace(),
-    //                   sfe::no_stacktrace_error);
   };
 
   PassDifferentTypes(lambda_test);
@@ -106,8 +119,6 @@ TEST_CASE("DeepThrow") {
     sfe::stacktrace trace1, trace2, trace3;
 
     REQUIRE(!sfe::get_current_exception_stacktrace());
-    // REQUIRE_THROWS_AS(sfe::get_current_exception_stacktrace(),
-    //                   sfe::no_stacktrace_error);
     try {
       try {
         try {
@@ -125,8 +136,6 @@ TEST_CASE("DeepThrow") {
     }
 
     REQUIRE(!sfe::get_current_exception_stacktrace());
-    // REQUIRE_THROWS_AS(sfe::get_current_exception_stacktrace(),
-    //                   sfe::no_stacktrace_error);
 
     REQUIRE(trace1);
     REQUIRE(trace2);
@@ -135,18 +144,116 @@ TEST_CASE("DeepThrow") {
     REQUIRE(trace1 != trace3);
     REQUIRE(trace2 != trace3);
 
-    // if (std::is_same<ExcType, std::runtime_error>::value) {
-    //   std::cerr << "TRACE = " << trace1;
-    // }
-
-    CheckNames(trace1);
-    CheckNames(trace2);
-    CheckNames(trace3);
+    CheckSymbolsInLambda(trace1);
+    CheckSymbolsInLambda(trace2);
+    CheckSymbolsInLambda(trace3);
   };
 
   PassDifferentTypes(lambda_test);
 }
 
 TEST_CASE("Multithread test") {
-  // TODO
+  static const size_t kThreadsCount = 10;
+  std::atomic_bool start{false};
+
+  auto work = [&start]() {
+    while (not start.load())
+      ;  // spin lock
+    for (size_t i = 0; i < 30; ++i) {
+      REQUIRE(!sfe::get_current_exception_stacktrace());
+      try {
+        throw std::runtime_error("some error");
+      } catch (const std::exception& exc) {
+        CheckSymbolsMultithread(*sfe::get_current_exception_stacktrace());
+      }
+    }
+  };
+
+  std::vector<std::thread> threads;
+  threads.reserve(kThreadsCount);
+  for (size_t i = 0; i < kThreadsCount; ++i) {
+    threads.emplace_back(work);
+  }
+  start.store(true);
+  for (auto& t : threads) {
+    t.join();
+  }
+}
+
+namespace {
+
+std::mt19937& Generator() {
+  // Seed is not significant for error injection
+  static thread_local std::mt19937 kGen(
+      std::hash<std::thread::id>()(std::this_thread::get_id()));
+  return kGen;
+}
+
+}  // namespace
+
+TEST_CASE("Multithread test with queue") {
+  static const size_t kThreadsCount = 10;
+  std::atomic_bool start{false};
+
+  std::queue<std::exception_ptr> q;
+  std::mutex qmutex;
+
+  auto push = [&q, &qmutex] {
+    try {
+      throw std::runtime_error("some error");
+    } catch (const std::exception& exc) {
+      auto exc_ptr = std::current_exception();
+      {
+        std::lock_guard<std::mutex> lg{qmutex};
+        q.push(exc_ptr);
+      }
+    }
+  };
+
+  auto pop = [&q, &qmutex] {
+    std::exception_ptr exc_ptr;
+    {
+      std::lock_guard<std::mutex> lg{qmutex};
+      if (q.empty()) {
+        return;
+      }
+      exc_ptr = q.front();
+      q.pop();
+    }
+    try {
+      std::rethrow_exception(exc_ptr);
+    } catch (const std::exception& exc) {
+      CheckSymbolsMultithread(*sfe::get_current_exception_stacktrace());
+    }
+  };
+
+  auto work = [&push, &pop, &start]() {
+    while (not start.load())
+      ;  // spin lock
+    for (size_t i = 0; i < 50; ++i) {
+      REQUIRE(!sfe::get_current_exception_stacktrace());
+      if (std::uniform_int_distribution<int>(0, 1)(Generator())) {
+        push();
+      } else {
+        pop();
+      }
+    }
+  };
+
+  std::vector<std::thread> threads;
+  threads.reserve(kThreadsCount);
+  for (size_t i = 0; i < kThreadsCount; ++i) {
+    threads.emplace_back(work);
+  }
+  start.store(true);
+  for (auto& t : threads) {
+    t.join();
+  }
+
+  while (not q.empty()) {
+    pop();
+  }
+
+  push();
+  pop();
 }
