@@ -1,7 +1,5 @@
 #pragma once
 
-#include <optional>
-
 #include <sfe/stacktrace.hpp>
 
 namespace sfe {
