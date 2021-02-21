@@ -1,6 +1,3 @@
-GREEN=\e[32m
-NORMAL=\e[0m
-
 PREFIX ?= /usr/local
 LIBDIR = $(PREFIX)/lib
 SFE_HEADERS_DIR = $(PREFIX)/include/sfe
@@ -22,31 +19,30 @@ build-release:
 install:
 	@set -e
 
-	make build-release
 	mkdir -p ${SFE_HEADERS_DIR}
-	echo -e '${GREEN}Install headers to ${SFE_HEADERS_DIR}${NORMAL}'
+	echo "Install headers to ${SFE_HEADERS_DIR}"
 	install -m644 include/sfe/sfe.hpp ${SFE_HEADERS_DIR}
 	install -m644 include/sfe/stacktrace.hpp ${SFE_HEADERS_DIR}
-	echo -e '${GREEN}Install libs to ${LIBDIR}${NORMAL}'
+	echo "Install libs to ${LIBDIR}"
 	install -m644 build/release/src/sfe/libsfe_basic.so ${LIBDIR}
 	install -m644 build/release/src/sfe/libsfe_preload.so ${LIBDIR}
-	echo -e '${GREEN}Updating linker cache${NORMAL}'
+	echo 'Updating linker cache'
 	ldconfig
-	echo -e "${GREEN}Install finished!${NORMAL}"
+	echo "Install finished!"
 
 
 .ONESHELL:
 run-tests-internal:
 	@set -e
 
-	echo -e "${GREEN}Test with compiler '$$CXX'${NORMAL}"
+	echo "Test with compiler '$$CXX'"
 
 	export CMAKE_OPTS_INTERNAL="-DCMAKE_CXX_COMPILER=$$CXX"
 
 	export LD_PRELOAD_INTERNAL=$$BUILD_DIR/src/sfe/libsfe_preload.so
 
 	if [ "$$SANITIZE_ENABLE" = "ON" ]; then
-		echo -e "${GREEN}And sanitizers${NORMAL}"
+		echo "And sanitizers"
 		export CMAKE_OPTS_INTERNAL="$$CMAKE_OPTS_INTERNAL -DSANITIZE_ENABLE=ON"
 		export LD_PRELOAD_INTERNAL="$$($$CXX -print-file-name=libasan.so):$$LD_PRELOAD_INTERNAL"
 	fi
@@ -72,5 +68,5 @@ run-tests:
 		make run-tests-internal BUILD_DIR=build/test_$${CXX}_sanitizers SANITIZE_ENABLE=ON
 	done
 
-	echo -e "${GREEN}Successfull!${NORMAL}"
+	echo "Successfull!"
 

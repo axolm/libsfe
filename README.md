@@ -5,6 +5,7 @@ Library for extracting stacktrace from exception.
 ```sh
 $ git clone https://github.com/axolm/libsfe.git
 $ cd libsfe
+$ make build-release
 $ sudo make install
 ```
 
