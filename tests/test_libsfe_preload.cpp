@@ -74,11 +74,10 @@ TEST_CASE("Basic") {
     try {
       throw std::forward<ExcType>(arg);
     } catch (ExcType& exc) {
-      auto* trace_ptr = sfe::get_current_exception_stacktrace();
-      REQUIRE(trace_ptr);
-      REQUIRE(*trace_ptr);
-      CheckSymbolsInLambda(*trace_ptr);
-      REQUIRE(*trace_ptr == *sfe::get_current_exception_stacktrace());
+      auto trace_opt = sfe::get_current_exception_stacktrace();
+      REQUIRE(trace_opt);
+      CheckSymbolsInLambda(trace_opt);
+      REQUIRE(trace_opt == sfe::get_current_exception_stacktrace());
     }
 
     REQUIRE(!sfe::get_current_exception_stacktrace());
@@ -95,15 +94,15 @@ TEST_CASE("WithRethrow") {
     try {
       throw std::forward<ExcType>(arg);
     } catch (ExcType& exc) {
-      REQUIRE(*sfe::get_current_exception_stacktrace());
+      REQUIRE(sfe::get_current_exception_stacktrace());
       ptr = std::current_exception();
-      REQUIRE(*sfe::get_current_exception_stacktrace());
+      REQUIRE(sfe::get_current_exception_stacktrace());
     }
 
     try {
       std::rethrow_exception(ptr);
     } catch (...) {
-      CheckSymbolsInLambda(*sfe::get_current_exception_stacktrace());
+      CheckSymbolsInLambda(sfe::get_current_exception_stacktrace());
     }
     REQUIRE(!sfe::get_current_exception_stacktrace());
   };
@@ -115,7 +114,9 @@ TEST_CASE("DeepThrow") {
   auto lambda_test = [](auto&& arg) {
     using ExcType = std::decay_t<decltype(arg)>;
 
-    sfe::stacktrace trace1, trace2, trace3;
+    sfe::stacktrace trace1(0, 0);
+    sfe::stacktrace trace2(0, 0);
+    sfe::stacktrace trace3(0, 0);
 
     REQUIRE(!sfe::get_current_exception_stacktrace());
     try {
@@ -123,15 +124,15 @@ TEST_CASE("DeepThrow") {
         try {
           throw std::forward<ExcType>(arg);
         } catch (ExcType& exc) {
-          trace1 = *sfe::get_current_exception_stacktrace();
+          trace1 = sfe::get_current_exception_stacktrace();
           throw;
         }
       } catch (ExcType& exc) {
-        trace2 = *sfe::get_current_exception_stacktrace();
+        trace2 = sfe::get_current_exception_stacktrace();
         throw exc;
       }
     } catch (...) {
-      trace3 = *sfe::get_current_exception_stacktrace();
+      trace3 = sfe::get_current_exception_stacktrace();
     }
 
     REQUIRE(!sfe::get_current_exception_stacktrace());
@@ -163,7 +164,7 @@ TEST_CASE("Multithread test") {
       try {
         throw std::runtime_error("some error");
       } catch (const std::exception& exc) {
-        CheckSymbolsMultithread(*sfe::get_current_exception_stacktrace());
+        CheckSymbolsMultithread(sfe::get_current_exception_stacktrace());
       }
     }
   };
@@ -222,7 +223,7 @@ TEST_CASE("Multithread test with queue") {
     try {
       std::rethrow_exception(exc_ptr);
     } catch (const std::exception& exc) {
-      CheckSymbolsMultithread(*sfe::get_current_exception_stacktrace());
+      CheckSymbolsMultithread(sfe::get_current_exception_stacktrace());
     }
   };
 

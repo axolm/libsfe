@@ -1,92 +1,69 @@
 #include <sfe/sfe.hpp>
 
-#include "cxa_exception.h"
-
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
+#include <cstddef>
 #include <exception>
-#include <iostream>
-#include <typeinfo>
+#include <mutex>
+#include <unordered_map>
+#include <utility>
 
-#include <cxxabi.h>
-
-namespace __cxxabiv1 {
+#include <dlfcn.h>
 
 namespace {
 
-// Round s up to next multiple of a.
-inline size_t aligned_allocation_size(size_t s, size_t a) {
-  return (s + a - 1) & ~(a - 1);
-}
+const size_t kStacktraceDumpSize = 4096;
 
-inline size_t cxa_exception_size_from_exception_thrown_size(size_t size) {
-  return aligned_allocation_size(size + sizeof(__cxa_exception),
-                                 alignof(__cxa_exception));
-}
+std::unordered_map<void*, const char*> stacktrace_dump_by_exc;
+std::mutex mutex;
 
-inline size_t get_cxa_exception_offset() {
-  struct S {
-  } __attribute__((aligned));
-
-  constexpr size_t alignment = alignof(S);
-  constexpr size_t excp_size = sizeof(__cxa_exception);
-  constexpr size_t aligned_size =
-      (excp_size + alignment - 1) / alignment * alignment;
-  constexpr size_t offset = aligned_size - excp_size;
-  static_assert((offset == 0 || alignof(_Unwind_Exception) < alignment),
-                "offset is non-zero only if _Unwind_Exception isn't aligned");
-  return offset;
-}
-
-inline void* thrown_object_from_cxa_exception(
-    __cxa_exception* exception_header) {
-  return static_cast<void*>(exception_header + 1);
-}
-
-inline __cxa_exception* cxa_exception_from_thrown_object(void* thrown_object) {
-  return static_cast<__cxa_exception*>(thrown_object) - 1;
-}
 }  // namespace
 
+namespace __cxxabiv1 {
 extern "C" {
 
 extern void* __cxa_allocate_exception(size_t thrown_size) throw() {
-  size_t header_and_thrown_size =
-      cxa_exception_size_from_exception_thrown_size(thrown_size);
-
-  size_t header_offset = get_cxa_exception_offset();
-  char* raw_buffer = (char*)malloc(header_offset + sizeof(sfe::stacktrace) +
-                                   header_and_thrown_size);
-
-  if (!raw_buffer) {
+  static thread_local bool already_in_allocate_exception = false;
+  if (std::exchange(already_in_allocate_exception, true)) {  // for `bad_alloc`
     std::terminate();
   }
 
-  raw_buffer += header_offset;
+  typedef void* (*cxa_allocate_exception_t)(size_t);
+  auto orig_cxa_allocate_exception =
+      (cxa_allocate_exception_t)dlsym(RTLD_NEXT, "__cxa_allocate_exception");
 
-  new (raw_buffer) sfe::stacktrace(1, -1);
-  raw_buffer += sizeof(sfe::stacktrace);
+  static constexpr size_t kAlign = alignof(std::max_align_t);
+  thrown_size = (thrown_size + kAlign - 1) & (~(kAlign - 1));  // round up
 
-  __cxa_exception* exception_header =
-      static_cast<__cxa_exception*>((void*)(raw_buffer));
-  ::memset(exception_header, 0, header_and_thrown_size);
+  void* user_obj_ptr =
+      orig_cxa_allocate_exception(thrown_size + kStacktraceDumpSize);
 
-  return thrown_object_from_cxa_exception(exception_header);
-}
+  char* stacktrace_dump_ptr = ((char*)user_obj_ptr + thrown_size);
 
-void __cxa_free_exception(void* thrown_object) throw() {
-  char* raw_buffer = (char*)cxa_exception_from_thrown_object(thrown_object);
-  raw_buffer -= sizeof(sfe::stacktrace);
-
+  // TODO: full dynamic serialization
+  boost::stacktrace::safe_dump_to(1, stacktrace_dump_ptr, kStacktraceDumpSize);
   {
-    using sfe::stacktrace;
-    static_cast<sfe::stacktrace*>((void*)raw_buffer)->~stacktrace();
+    std::lock_guard<std::mutex> lg{mutex};
+    stacktrace_dump_by_exc[user_obj_ptr] = stacktrace_dump_ptr;
   }
 
-  raw_buffer -= get_cxa_exception_offset();
+  return already_in_allocate_exception = false, user_obj_ptr;
+}
 
-  free((void*)raw_buffer);
+// TODO: Not called in libc++
+// So the `stacktrace_dump_by_exc` is not cleared. That's not fatal
+extern void __cxa_free_exception(void* thrown_object) throw() {
+  static thread_local bool already_in_free_exception = false;
+  if (std::exchange(already_in_free_exception, true)) {  // for `bad_alloc`
+    std::terminate();
+  }
+
+  typedef void (*cxa_free_exception_t)(void*);
+  auto orig_cxa_free_exception =
+      (cxa_free_exception_t)dlsym(RTLD_NEXT, "__cxa_free_exception");
+  orig_cxa_free_exception(thrown_object);
+
+  stacktrace_dump_by_exc.erase(thrown_object);
+
+  already_in_free_exception = false;
 }
 }
 }  // namespace __cxxabiv1
@@ -94,10 +71,9 @@ void __cxa_free_exception(void* thrown_object) throw() {
 namespace sfe {
 
 namespace {
-using __cxxabiv1::__cxa_exception;
-using __cxxabiv1::cxa_exception_from_thrown_object;
 
 inline void* get_current_exception_raw_ptr() {
+  // https://github.com/gcc-mirror/gcc/blob/16e2427f50c208dfe07d07f18009969502c25dc8/libstdc%2B%2B-v3/libsupc%2B%2B/eh_ptr.cc#L147
   auto exc_ptr = std::current_exception();
   void* exc_raw_ptr = *static_cast<void**>((void*)&exc_ptr);  // TODO
   return exc_raw_ptr;
@@ -105,14 +81,26 @@ inline void* get_current_exception_raw_ptr() {
 
 }  // namespace
 
-extern const sfe::stacktrace* get_current_exception_stacktrace() {
+extern sfe::stacktrace get_current_exception_stacktrace() {
+  static const sfe::stacktrace kEmpty{0, 0};
+
   void* exc_raw_ptr = get_current_exception_raw_ptr();
   if (!exc_raw_ptr) {
-    return nullptr;
+    return kEmpty;
   }
-  auto* exception_header = cxa_exception_from_thrown_object(exc_raw_ptr);
-  return static_cast<sfe::stacktrace*>(
-      (void*)((char*)exception_header - sizeof(sfe::stacktrace)));
+
+  const char* stacktrace_dump_ptr;
+  {
+    std::lock_guard<std::mutex> lg{mutex};
+    auto it = stacktrace_dump_by_exc.find(exc_raw_ptr);
+    if (it == stacktrace_dump_by_exc.end()) {
+      return kEmpty;
+    }
+    stacktrace_dump_ptr = it->second;
+  }
+
+  return boost::stacktrace::stacktrace::from_dump(stacktrace_dump_ptr,
+                                                  kStacktraceDumpSize);
 }
 
 }  // namespace sfe

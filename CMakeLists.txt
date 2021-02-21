@@ -3,8 +3,7 @@ project(sfe)
 cmake_minimum_required(VERSION 3.5)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS  ON)
-# set(CMAKE_CXX_STANDARD 14)
-set(CMAKE_CXX_STANDARD 17) # for std::optional in v3
+set(CMAKE_CXX_STANDARD 14)
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
     set (COMPILER_CLANG 1)
