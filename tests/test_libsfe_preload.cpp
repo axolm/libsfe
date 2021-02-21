@@ -27,13 +27,13 @@ void CheckSymbolsInLambda(const sfe::stacktrace& stacktrace) {
 
   {
     static const std::regex kRegex{
-        R"(^operator\(\)<.*>.*test_libsfe_preload\.cpp:\d+$)"};
+        R"(^.*operator\(\)<.*>.*test_libsfe_preload\.cpp:\d+$)"};
     REQUIRE(std::regex_match(ToStr(vector_ref[0]), kRegex));
   }
 
   {
     static const std::regex kRegex{
-        R"(^PassDifferentTypes.*test_libsfe_preload\.cpp:\d+$)"};
+        R"(^.*PassDifferentTypes.*test_libsfe_preload\.cpp:\d+$)"};
     REQUIRE(std::regex_match(ToStr(vector_ref[1]), kRegex));
   }
 

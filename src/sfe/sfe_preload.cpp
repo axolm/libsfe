@@ -61,7 +61,10 @@ extern void __cxa_free_exception(void* thrown_object) throw() {
       (cxa_free_exception_t)dlsym(RTLD_NEXT, "__cxa_free_exception");
   orig_cxa_free_exception(thrown_object);
 
-  stacktrace_dump_by_exc.erase(thrown_object);
+  {
+    std::lock_guard<std::mutex> lg{mutex};
+    stacktrace_dump_by_exc.erase(thrown_object);
+  }
 
   already_in_free_exception = false;
 }
