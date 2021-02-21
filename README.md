@@ -32,8 +32,7 @@ int main() {
 ```
 Compiling and runing
 ```
-$ g++ -g -DBOOST_STACKTRACE_DYN_LINK basic.cpp -obasic \
-    -lsfe_basic -lboost_stacktrace_backtrace -ldl
+$ g++ -g -DBOOST_STACKTRACE_DYN_LINK basic.cpp -obasic -lsfe_basic -lboost_stacktrace_backtrace
 
 $ ./basic
 Caught exception. Err: `SOME ERROR`, Trace:
