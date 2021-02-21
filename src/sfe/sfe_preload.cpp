@@ -52,7 +52,7 @@ extern void* __cxa_allocate_exception(size_t thrown_size) throw() {
 // So the `stacktrace_dump_by_exc` is not cleared. That's not fatal
 extern void __cxa_free_exception(void* thrown_object) throw() {
   static thread_local bool already_in_free_exception = false;
-  if (std::exchange(already_in_free_exception, true)) {  // for `bad_alloc`
+  if (std::exchange(already_in_free_exception, true)) {
     std::terminate();
   }
 
