@@ -57,7 +57,7 @@ run-tests-internal:
 
 
 # `AVAILABLE_COMPILERS=g++ make run-tests` -- Run tests with chosen compilers
-AVAILABLE_COMPILERS ?= g++-10 clang++-10
+AVAILABLE_COMPILERS ?= g++ clang++
 .PHONY: run-tests
 .ONESHELL:
 run-tests:

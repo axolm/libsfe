@@ -1,0 +1,113 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html><head>
+    <title>Stacktrace from exception</title>
+    <meta content="http://schemas.microsoft.com/intellisense/ie5" name="vs_targetSchema">
+    <meta http-equiv="Content-Language" content="en-us">
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+    <style type="text/css">
+        .addition { color: green; }
+        .right { float:right }
+        .changed-deleted { background-color: #CFF0FC ; text-decoration: line-through; display: none; }
+        .addition.changed-deleted { color: green; background-color: #CFF0FC ; text-decoration: line-through; text-decoration: black double line-through; display: none; }
+        .changed-added { background-color: #CFF0FC ;}
+        .notes { background-color: gold ;}
+        pre { line-height: 1.2; font-size: 10pt; margin-top: 25px; }
+        .desc { margin-left: 35px; margin-top: 10px; padding:0; white-space: normal; font-family:monospace }
+        body {max-width: 1024px; margin-left: 25px;}
+        del { background-color: red; }
+        ins { background-color: lightgreen; }
+        .sub { vertical-align: sub; }
+        .lmargin50{margin-left: 50px;}
+        .width_third{width: 33%;}
+        .cppkeyword { color: blue; }
+        .asmcostly { color: red; }
+        .cppcomment { color: green; }
+        .cppcomment > .cppkeyword{ color: green; }
+        .cppaddition { background-color: #CFC; }
+        .cppdeletion {  text-decoration: line-through; background-color: #FCC; }
+        .stdquote { background-color: #ECECEC; font-family: Consolas,monospace; }
+    </style>
+    </head>
+    <body bgcolor="#ffffff">
+    <address>Document number: D????R0</address>
+    <address>Project: Programming Language C++</address>
+    <address>Audience: Library Evolution</address>
+    <address>&nbsp;</address>
+    <address>Andrei Nekrashevich &lt;<a href="mailto:axolm13@gmail.com">axolm13@gmail.com</a>&gt;, &lt;<a href="mailto:axolm@yandex-team.ru">axolm@yandex-team.ru</a>&gt;</address>
+    <address>Antony Polukhin &lt;<a href="mailto:antoshkka@gmail.com">antoshkka@gmail.com</a>&gt;, &lt;<a href="mailto:antoshkka@yandex-team.ru">antoshkka@yandex-team.ru</a>&gt;</address>
+    <address>&nbsp;</address>
+    <address>Date: 2021-04-04</address>
+    <h1>Stacktrace from exception</h1>
+
+    <h2>I. Introduction and Motivation</h2>
+
+    <p>
+    In C++ 23 <code>std::stacktrace</code> will appear in the Standard Library. In this paper it is proposed to add ability to get stacktrace of caught exception, namely to add static method <code>std::stacktrace::from_current_exception()</code>.
+    </p>
+    <p>
+    Motivational example: <pre>
+#include &lt;iostream&gt;
+#include &lt;stacktrace&gt;
+#include &lt;stdexcept&gt;
+
+void throw_something() {
+  throw std::runtime_error("SOME ERROR");
+}
+
+int main() {
+  try {
+    throw_something();
+  } catch (const std::exception& exc) {
+    auto trace = std::stacktrace::from_current_exception();
+    std::cerr << "Caught exception. Err: `" << exc.what() << "`, Trace:\n"
+              << trace;
+  }
+  return 0;
+}
+</pre>
+    Output:
+<pre>
+Caught exception. Err: `SOME ERROR`, Trace:
+ 0# throw_something() at /home/axolm/basic.cpp:6
+ 1# main at /home/axolm/basic.cpp:17
+ 2# 0x00007FB823D77BF7 in /lib/x86_64-linux-gnu/libc.so.6
+ 3# 0x0000558E89A2202A in ./basic
+</pre>
+    </p>
+
+    <h2>II. The idea</h2>
+    <p>Prototype - <a href="https://github.com/axolm/libsfe">libsfe</a>.</p>
+    <p>To add the trace to exception without breaking ABI,
+    we will override <code>__cxa_allocate_exception</code> and <code>__cxa_free_exception</code>
+    libc++abi functions in a separate library (named <code>libsfe_preload</code> in prototype).</p>
+    <p>TODO: more details</p>
+
+<script type="text/javascript">
+    function colorize_texts(texts) {
+    for (var i = 0; i < texts.length; ++i) {
+        var text = texts[i].innerHTML;
+        text = text.replace(/namespace|if |using|async|do\n|while|resumable|co_await|co_yield|co_return|await|yield|char|sizeof|long|enum|void|constexpr|extern|noexcept|bool|template|class |struct|auto|const|typename|explicit|public|private|operator|#include|inline| char|typedef|static_assert|int|return|union|static_cast|static/g,"<span class='cppkeyword'>$&<\/span>");
+        text = text.replace(/\/\/[\s\S]+?\n/g,"<span class='cppcomment'>$&<\/span>");
+        texts[i].innerHTML = text;
+    }
+    }
+
+    colorize_texts(document.getElementsByTagName("pre"));
+    colorize_texts(document.getElementsByTagName("code"));
+
+    function show_hide_deleted() {
+    var to_change = document.getElementsByClassName('changed-deleted');
+    for (var i = 0; i < to_change.length; ++i) {
+        to_change[i].style.display = (document.getElementById("show_deletions").checked ? 'block' : 'none');
+    }
+    }
+    show_hide_deleted()
+
+    initial_text = document.getElementById('diff').innerHTML
+    function on_input_change(self) {
+        document.getElementById('diff').innerHTML = initial_text.replace(/async/g, self.value);
+    }
+</script>
+</body></html>
+
