@@ -4,7 +4,7 @@ Library for extracting stacktrace from exception.
 ### Install (Tested only for Linux)
 ```sh
 $ # depends on `libboost-stacktrace-dev`
-$ git clone https://github.com/axolm/libsfe.git
+$ git clone git@github.com:axolm/libsfe.git
 $ cd libsfe
 $ make build-release
 $ sudo make install
