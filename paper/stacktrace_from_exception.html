@@ -46,7 +46,10 @@
     In C++ 23 <code>std::stacktrace</code> will appear in the Standard Library. In this paper it is proposed to add ability to get stacktrace of caught exception, namely to add static method <code>std::stacktrace::from_current_exception()</code>.
     </p>
     <p>
-    Motivational example: <pre>
+    This can be useful, for example, when we log exceptions in the http-server thrown from a user query-handler. Sometimes it happens that <code>_Map_base::at</code> is thrown, and then it is not clear in which part of the code this happened.
+    </p>
+    <p>Motivational example #1:<p>
+<pre>
 #include &lt;iostream&gt;
 #include &lt;stacktrace&gt;
 #include &lt;stdexcept&gt;
@@ -74,14 +77,60 @@ Caught exception. Err: `SOME ERROR`, Trace:
  2# 0x00007FB823D77BF7 in /lib/x86_64-linux-gnu/libc.so.6
  3# 0x0000558E89A2202A in ./basic
 </pre>
+    It can also be very useful in <code>std::terminate</code> handler.
     </p>
+    <p>
+    Motivational example #2:
+    <p>
+<pre>
+#include &lt;iostream&gt;
+#include &lt;stacktrace&gt;
+#include &lt;stdexcept&gt;
+#include &lt;unordered_map&gt;
+
+void broken_function() noexcept {
+  std::unordered_map&lt;std::string, int&gt; m;
+  std::ignore = m.at("non-existing-key");
+}
+
+int main() {
+  std::set_terminate([] {
+    std::cerr << "Exception trace:\n"
+              << sfe::get_current_exception_stacktrace() << std::endl;
+  });
+  broken_function();
+  return 0;
+}
+</pre>
+    Output:
+    </p>
+<pre>
+Exception trace:
+ 0# std::__throw_out_of_range(char const*) at /build/gcc/src/gcc/libstdc++-v3/src/c++11/functexcept.cc:82
+ 1# std::__detail::_Map_base&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator ...
+ 2# std::unordered_map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; ...
+ 3# broken_function() at /home/axolm/terminate.cpp:8
+ 4# main at /home/axolm/terminate.cpp:17
+ 5# __libc_start_main in /usr/lib/libc.so.6
+ 6# _start in ./terminate
+
+[1]    56733 abort (core dumped)  ...
+</pre>
 
     <h2>II. The idea</h2>
-    <p>Prototype - <a href="https://github.com/axolm/libsfe">libsfe</a>.</p>
-    <p>To add the trace to exception without breaking ABI,
-    we will override <code>__cxa_allocate_exception</code> and <code>__cxa_free_exception</code>
-    libc++abi functions in a separate library (named <code>libsfe_preload</code> in prototype).</p>
-    <p>TODO: more details</p>
+    <p>Add <code>std::stacktrace</code> to exception in <code>__cxa_allocate_exception</code> and provide <code>std::stacktrace::from_current_exception()</code> to extract it.</p>
+    <h2>III. Proof of concept</h2>
+    <p>To prove that this can be done without breaking the abi a prototype <a href="https://github.com/axolm/libsfe">libsfe</a> is made.</p>
+    <p>In it, this is done by overriding some libc++abi functions with a separate library (named <code>libsfe_preload</code>).</p>
+
+    <h2>IV. Revision History</h2>
+    <p>Revision 0:</p>
+    <ul>
+        <li>Initial proposal.</li>
+    </ul>
+
+    <h2>V. References</h2>
+    <p>[<a name="libsfe">libsfe</a>] Proof of concept implementation. Available online at <a href="https://github.com/axolm/libsfe">https://github.com/axolm/libsfe</a>.</p>
 
 <script type="text/javascript">
     function colorize_texts(texts) {

@@ -54,6 +54,7 @@ run-tests-internal:
 	set -x
 	$$BUILD_DIR/tests/test_libsfe_basic
 	LD_PRELOAD=$$LD_PRELOAD_INTERNAL $$BUILD_DIR/tests/test_libsfe_preload
+	LD_PRELOAD=$$LD_PRELOAD_INTERNAL $$BUILD_DIR/tests/test_terminate_preload
 
 
 # `AVAILABLE_COMPILERS=g++ make run-tests` -- Run tests with chosen compilers
