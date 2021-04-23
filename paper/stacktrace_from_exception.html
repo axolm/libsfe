@@ -13,7 +13,7 @@
         .changed-added { background-color: #CFF0FC ;}
         .notes { background-color: gold ;}
         pre { line-height: 1.2; font-size: 10pt; margin-top: 25px; }
-        .desc { margin-left: 35px; margin-top: 10px; padding:0; white-space: normal; font-family:monospace }
+        .desc { margin-left: 35px; margin-top: 10px; padding:0; white-space: normal;}
         body {max-width: 1024px; margin-left: 25px;}
         del { background-color: red; }
         ins { background-color: lightgreen; }
@@ -37,51 +37,73 @@
     <address>Andrei Nekrashevich &lt;<a href="mailto:axolm13@gmail.com">axolm13@gmail.com</a>&gt;, &lt;<a href="mailto:axolm@yandex-team.ru">axolm@yandex-team.ru</a>&gt;</address>
     <address>Antony Polukhin &lt;<a href="mailto:antoshkka@gmail.com">antoshkka@gmail.com</a>&gt;, &lt;<a href="mailto:antoshkka@yandex-team.ru">antoshkka@yandex-team.ru</a>&gt;</address>
     <address>&nbsp;</address>
-    <address>Date: 2021-04-04</address>
+    <address>Date: 2021-04-20</address>
     <h1>Stacktrace from exception</h1>
 
     <h2>I. Introduction and Motivation</h2>
-
-    <p>
-    In C++ 23 <code>std::stacktrace</code> will appear in the Standard Library. In this paper it is proposed to add ability to get stacktrace of caught exception, namely to add static method <code>std::stacktrace::from_current_exception()</code>.
-    </p>
-    <p>
-    This can be useful, for example, when we log exceptions in the http-server thrown from a user query-handler. Sometimes it happens that <code>_Map_base::at</code> is thrown, and then it is not clear in which part of the code this happened.
-    </p>
-    <p>Motivational example #1:<p>
-<pre>
+    <p>Quite often Standard Library exceptions do not provide enough information to diagnose the error. Consider the example:</p>
+    <pre>
 #include &lt;iostream&gt;
-#include &lt;stacktrace&gt;
 #include &lt;stdexcept&gt;
+#include &lt;string_view&gt;
 
-void throw_something() {
-  throw std::runtime_error("SOME ERROR");
-}
+void foo(std::string_view key);
+void bar(std::string_view key);
 
 int main() {
   try {
-    throw_something();
+    foo("test1");
+    bar("test2");
   } catch (const std::exception& exc) {
-    auto trace = std::stacktrace::from_current_exception();
-    std::cerr << "Caught exception. Err: `" << exc.what() << "`, Trace:\n"
-              << trace;
+    std::cerr << "Caught exception: " << exc.what() << '\n';
   }
-  return 0;
 }
 </pre>
-    Output:
-<pre>
-Caught exception. Err: `SOME ERROR`, Trace:
- 0# throw_something() at /home/axolm/basic.cpp:6
- 1# main at /home/axolm/basic.cpp:17
- 2# 0x00007FB823D77BF7 in /lib/x86_64-linux-gnu/libc.so.6
- 3# 0x0000558E89A2202A in ./basic
+    <p>The output of the above sample may be the following:</p>
+    <pre>
+Caught exception: map::at
 </pre>
-    It can also be very useful in <code>std::terminate</code> handler.
-    </p>
-    <p>
-    Motivational example #2:
-    <p>
+
+    <p>That output is quite useless because it does not help the developer to understand in what function the error happened.</p>
+
+    <p>This paper proposes to add an ability to get stacktrace of a caught exception, namely to add static method <code>std::stacktrace::from_current_exception()</code>:</p>
+    <pre>
+#include &lt;iostream&gt;
+#include &lt;stdexcept&gt;
+#include &lt;string_view&gt;
+#include &lt;stacktrace&gt;   // &lt;---
+
+void foo(std::string_view key);
+void bar(std::string_view key);
+
+int main() {
+  try {
+    foo("test1");
+    bar("test2");
+  } catch (const std::exception& exc) {
+    std::stacktrace trace = std::stacktrace::from_current_exception();  // &lt;---
+    std::cerr << "Caught exception: " << exc.what() << ", trace:\n" << trace;
+  }
+}
+</pre>
+    <p>The output of the above sample may be the following:</p>
+    <pre>
+Caught exception: map::at, trace:
+ 0# get_data_from_config(std::string_view) at /home/axolm/basic.cpp:600
+ 1# bar(std::string_view) at /home/axolm/basic.cpp:6
+ 2# main at /home/axolm/basic.cpp:17
+</pre>
+    <p>That output is quite useful! Without a debugger we can locate the source file and the function that has thrown the exception.</p>
+
+    <p>More production log examples where stacktraces would help to diagnose the problem faster:</p>
+    <ul>
+      <li><code>Serializing 'UserData' failed: bad optional access</code> &mdash; a trace would show that the exception is from <code>NormalizePhone</code> function; further logs analysis will show that the phone is missing.</li>
+      <li><code>ERROR    [/order-search] exception in 'handler-search-cab-orders' handler in handle_request: _Map_base::at (std::out_of_range)</code> &mdash; a trace would show that the exception is from <code>GetOrganization</code> function; reading the code would show that the function has issues with concurrent updates</li>
+      <li><code>Failed to process 'POST' request to '/v1/order-a-cab': bad any_cast</code> &mdash; a trace would show that the exception is from authorization function; wrong context is passed to the authorization function.</li>
+      <li><code>Fatal: Missing a colon after a name of object member.</code> &mdash; a trace would show that the exception is from a function that parses JSON dictionary of configuration variables.</li>
+    </ul>
+
+    <p>Here's another motivation example. It allows the developer to diagnose <code>std::terminate</code> calls because of throws in <code>noexcept</code> function:</p>
 <pre>
 #include &lt;iostream&gt;
 #include &lt;stacktrace&gt;
@@ -90,20 +112,22 @@ Caught exception. Err: `SOME ERROR`, Trace:
 
 void broken_function() noexcept {
   std::unordered_map&lt;std::string, int&gt; m;
-  std::ignore = m.at("non-existing-key");
+  [[maybe_unused]] auto value = m.at("non-existing-key");
 }
 
 int main() {
   std::set_terminate([] {
-    std::cerr << "Exception trace:\n"
-              << sfe::get_current_exception_stacktrace() << std::endl;
+    auto trace = std::stacktrace::from_current_exception();
+    if (trace) {
+        std::cerr << "Terminate was called with an active exception:\n"
+                  << trace << std::endl;
+    }
   });
+
   broken_function();
-  return 0;
 }
 </pre>
-    Output:
-    </p>
+    <p>Output:</p>
 <pre>
 Exception trace:
  0# std::__throw_out_of_range(char const*) at /build/gcc/src/gcc/libstdc++-v3/src/c++11/functexcept.cc:82
@@ -111,19 +135,56 @@ Exception trace:
  2# std::unordered_map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; ...
  3# broken_function() at /home/axolm/terminate.cpp:8
  4# main at /home/axolm/terminate.cpp:17
- 5# __libc_start_main in /usr/lib/libc.so.6
- 6# _start in ./terminate
+</pre>
+    <p><i>Disclaimer: may not produce traces on all platforms</i></p>
 
-[1]    56733 abort (core dumped)  ...
+    <p>Finally, an ability to extract stacktraces from exceptions addresses feature requests from "2021 Annual C++ Developer Survey". In it some people
+    were complaining that in their projects exceptions are restricted due to lack of stacktraces.</p>
+
+
+    <h2>II. Implementation and ABI stability</h2>
+    <p>Majority of the popular platforms have special functions to allocate/throw/deallocate exceptions: <code>__cxa_allocate_exception</code>, <code>__cxa_throw</code>, <code>__CxxThrowException</code>...
+    To embed a trace into an exception an underlying implementation may be changed, to gather the trace at the point where the exception is thrown.</p>
+
+    <p>This can be done without breaking the ABI. Here's a prototype <a href="https://github.com/axolm/libsfe">libsfe</a> that replaces those functions and adds a stacktrace into each exception.
+    Application can switch between exceptions with traces and without via adding and removing a <code>LD_PRELOAD=/usr/local/lib/libsfe_preload.so</code>.</p>
+
+    <h2>III. Design decisions</h2>
+    <h3>A. Safety</h3>
+    <p>Proposed <code>std::stacktrace::from_current_exception()</code> function is a diagnostic facility. It would be used in error processing and other places that are rarely tested.
+    Because of that it follows the <code>std::stacktrace</code> design: do not report missing traces as errors, do not throw and treat all the internal errors as a missing trace.</p>
+
+    <h3>B. Link time flag from std::stacktrace</h3>
+    <p>"A Proposal to add stacktrace library" <a href="https://wg21.link/P0881">P0881</a> encouraged implementations to provide a link time flag to disable or enable traces. With disabled tracing
+    <code>std::stacktrace::from_current_exception()</code> may be called at runtime and it returns default constructed <code>std::stacktrace</code>.</p>
+
+    <h3>C. Performance</h3>
+    <p><code>std::stacktrace::from_current_exception()</code> is lazy and does not query the stacktrace entry information if there was no explicit request. In other words it
+    only stores frame pointers. On most platforms getting the stack frame pointer at the stack unwinding is a single pointer assignment operation, which adds
+    an unnoticeable performance overhead. If that does not hold for a platform implementations are encouraged to provide link time flag to disable traces in exceptions without disabling
+    the remaining <code>std::stacktrace</code> functionality.</p>
+
+    <h2>IV. Wording</h2>
+      <p>Add to the [stacktrace.basic.overview]:</p>
+<pre>
+    static basic_stacktrace current(size_type skip, size_type max_depth,
+                                    const allocator_type&amp; alloc = allocator_type()) noexcept;
+
+<span class="cppaddition">    static basic_stacktrace from_current_exception(
+                                    const allocator_type&amp; alloc = allocator_type()) noexcept;</span>
+
+    basic_stacktrace() noexcept(is_nothrow_default_constructible_v&lt;allocator_type&gt;);
 </pre>
 
-    <h2>II. The idea</h2>
-    <p>Add <code>std::stacktrace</code> to exception in <code>__cxa_allocate_exception</code> and provide <code>std::stacktrace::from_current_exception()</code> to extract it.</p>
-    <h2>III. Proof of concept</h2>
-    <p>To prove that this can be done without breaking the abi a prototype <a href="https://github.com/axolm/libsfe">libsfe</a> is made.</p>
-    <p>In it, this is done by overriding some libc++abi functions with a separate library (named <code>libsfe_preload</code>).</p>
+      <p>Add to the [stacktrace.basic.ctor] after the description of <code>current()</code> functions:</p>
+<div class="cppaddition">
+    <pre>static basic_stacktrace from_current_exception(const allocator_type&amp; alloc = allocator_type()) noexcept;</pre>
+        <div class="desc"><i>Effects:</i> Returns a <code>basic_stacktrace</code> object with <code>frames_</code> storing the stacktrace of the evaluation at the point of construction of the currently handled exception, or an empty <code>basic_stacktrace</code> object if the initialization of <code>frames_</code> failed or no exception is being handled. <code>alloc</code> is passed to the constructor of the <code>frames_</code> object.</div>
+        <div class="desc"><i>[Note:</i> Rethrowing exceptions with <code>throw;</code> do not change stacktrace, throwing exception with <code>throw e;</code>
+        stores a new stacktrace.<i>- end note]</i></div>
+</div>
 
-    <h2>IV. Revision History</h2>
+    <h2>V. Revision History</h2>
     <p>Revision 0:</p>
     <ul>
         <li>Initial proposal.</li>
@@ -136,7 +197,7 @@ Exception trace:
     function colorize_texts(texts) {
     for (var i = 0; i < texts.length; ++i) {
         var text = texts[i].innerHTML;
-        text = text.replace(/namespace|if |using|async|do\n|while|resumable|co_await|co_yield|co_return|await|yield|char|sizeof|long|enum|void|constexpr|extern|noexcept|bool|template|class |struct|auto|const|typename|explicit|public|private|operator|#include|inline| char|typedef|static_assert|int|return|union|static_cast|static/g,"<span class='cppkeyword'>$&<\/span>");
+        //text = text.replace(/namespace|if |using|async|do\n|while|resumable|co_await|co_yield|co_return|await|yield|char|sizeof|long|enum|void|constexpr|extern|noexcept|bool|template|class |struct|auto|const|typename|explicit|public|private|operator|#include|inline| char|typedef|static_assert|int|return|union|static_cast|static/g,"<span class='cppkeyword'>$&<\/span>");
         text = text.replace(/\/\/[\s\S]+?\n/g,"<span class='cppcomment'>$&<\/span>");
         texts[i].innerHTML = text;
     }
