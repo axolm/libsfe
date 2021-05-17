@@ -37,7 +37,7 @@
     <address>Andrei Nekrashevich &lt;<a href="mailto:axolm13@gmail.com">axolm13@gmail.com</a>&gt;, &lt;<a href="mailto:axolm@yandex-team.ru">axolm@yandex-team.ru</a>&gt;</address>
     <address>Antony Polukhin &lt;<a href="mailto:antoshkka@gmail.com">antoshkka@gmail.com</a>&gt;, &lt;<a href="mailto:antoshkka@yandex-team.ru">antoshkka@yandex-team.ru</a>&gt;</address>
     <address>&nbsp;</address>
-    <address>Date: 2021-04-25</address>
+    <address>Date: 2021-05-17</address>
     <h1>Stacktrace from exception</h1>
 
     <h2>I. Introduction and Motivation</h2>
@@ -141,7 +141,6 @@ Exception trace:
     <p>Finally, an ability to extract stacktraces from exceptions addresses feature requests from "2021 Annual C++ Developer Survey". In it some people
     were complaining that in their projects exceptions are restricted due to lack of stacktraces.</p>
 
-
     <h2>II. Implementation and ABI stability</h2>
     <p>Majority of the popular platforms have special functions to allocate/throw/deallocate exceptions: <code>__cxa_allocate_exception</code>, <code>__cxa_throw</code>, <code>__CxxThrowException</code>...
     To embed a trace into an exception an underlying implementation may be changed, to gather the trace at the point where the exception is thrown.</p>
@@ -149,7 +148,62 @@ Exception trace:
     <p>This can be done without breaking the ABI. Here's a prototype <a href="https://github.com/axolm/libsfe">libsfe</a> that replaces those functions and adds a stacktrace into each exception.
     Application can switch between exceptions with traces and without via adding and removing a <code>LD_PRELOAD=/usr/local/lib/libsfe_preload.so</code>.</p>
 
-    <h2>III. Design decisions</h2>
+    <h2>III. Use cases</h2>
+    <p>The table bellow shows std::stacktrace related techniques to use in different cases</p>
+    <table border=1>
+    <tr>
+      <th>Case</th>
+      <th>HowTo</th>
+      <th>Proposal</th>
+    </tr>
+    <tr>
+      <td>Need a way to get diagnostic info for an unrecoverable errors. For example for failed assert checks</td>
+      <td>Just log the trace and abort: <pre>std::cerr &lt;&lt; std::stacktrace::current();
+std::abort();
+</pre></td>
+      <td><a href="https://wg21.link/P0881">P0881</a></td>
+    </tr>
+    <tr>
+      <td>Need to get stacktraces from some code paths and you have control over the throw site.</td>
+      <td>Manually embed the stacktrace into the exception: <pre>template &lt;class Base&gt;
+struct TracedException: Base, std::stacktrace {
+  TracedException(): Base(), std::stacktrace(std::stacktrace::current()) {}
+};
+// ...
+throw TracedException&lt;std::bad_any_cast&gt;();
+</pre>
+    Extract it at the catch site: <pre>catch (const std::exception& e) {
+    if (auto ptr = dynamic_cast&lt;const std::stacktrace*&gt;(&amp;e); ptr) {
+        std::cerr << *ptr;
+    }
+    // ...
+}</pre>
+    </td>
+      <td><a href="https://wg21.link/P0881">P0881</a></td>
+    </tr>
+    <tr>
+      <td>Need a trace from the throw site to simplify diagnoses of failed tests.</td>
+      <td>Use <code>stacktrace::from_current_exception</code> in your testing macro to get the trace: <pre>EXPECT_NO_THROW(search_engine_impl("42"));</pre></td>
+      <td>This proposal</td>
+    </tr>
+    <tr>
+      <td>Need a way to diagnose a running application in production.</td>
+      <td>Turn on <code>stacktrace::from_current_exception</code> in your error handling logic: <pre>std::atomic&ltbool&gt; trace_exceptions = false;
+// ...
+try {
+    process_request(request);
+} catch (const std::exception& e) {
+  if (trace_exceptions) {
+      std::cerr &lt;&lt; std::stacktrace::from_current_exception();
+  }
+}</pre></td>
+      <td>This proposal</td>
+    </tr>
+    </table>
+
+    <p>To sum up: you need functionality of this paper when you have no control over the throw site or changing all the throw sites is time consuming.</p>
+
+    <h2>IV. Design decisions</h2>
     <h3>A. Safety</h3>
     <p>Proposed <code>std::stacktrace::from_current_exception()</code> function is a diagnostic facility. It would be used in error processing and other places that are rarely tested.
     Because of that it follows the <code>std::stacktrace</code> design: do not report missing traces as errors, do not throw and treat all the internal errors as a missing trace.</p>
@@ -164,7 +218,7 @@ Exception trace:
     an unnoticeable performance overhead. If that does not hold for a platform implementations are encouraged to provide link time flag to disable traces in exceptions without disabling
     the remaining <code>std::stacktrace</code> functionality.</p>
 
-    <h2>IV. Wording</h2>
+    <h2>V. Wording</h2>
       <p>Add to the [stacktrace.basic.overview]:</p>
 <pre>
     static basic_stacktrace current(size_type skip, size_type max_depth,
@@ -184,13 +238,13 @@ Exception trace:
         stores a new stacktrace.<i>- end note]</i></div>
 </div>
 
-    <h2>V. Revision History</h2>
+    <h2>VI. Revision History</h2>
     <p>Revision 0:</p>
     <ul>
         <li>Initial proposal.</li>
     </ul>
 
-    <h2>V. References</h2>
+    <h2>VII. References</h2>
     <p>[<a name="libsfe">libsfe</a>] Proof of concept implementation. Available online at <a href="https://github.com/axolm/libsfe">https://github.com/axolm/libsfe</a>.</p>
 
 <script type="text/javascript">
