@@ -37,14 +37,13 @@ run-tests-internal:
 
 	echo "Test with compiler '$$CXX'"
 
-	export CMAKE_OPTS_INTERNAL="-DCMAKE_CXX_COMPILER=$$CXX"
+	CMAKE_OPTS_INTERNAL="-DCMAKE_CXX_COMPILER=$$CXX"
 
-	export LD_PRELOAD_INTERNAL=$$BUILD_DIR/src/sfe/libsfe_preload.so
-
+	LD_PRELOAD_INTERNAL=$$BUILD_DIR/src/sfe/libsfe_preload.so
 	if [ "$$SANITIZE_ENABLE" = "ON" ]; then
 		echo "And sanitizers"
-		export CMAKE_OPTS_INTERNAL="$$CMAKE_OPTS_INTERNAL -DSANITIZE_ENABLE=ON"
-		export LD_PRELOAD_INTERNAL="$$($$CXX -print-file-name=libasan.so):$$LD_PRELOAD_INTERNAL"
+		CMAKE_OPTS_INTERNAL="$$CMAKE_OPTS_INTERNAL -DSANITIZE_ENABLE=ON"
+		LD_PRELOAD_INTERNAL="$$($$CXX -print-file-name=libasan.so):$$LD_PRELOAD_INTERNAL"
 	fi
 
 	mkdir -p $$BUILD_DIR
@@ -71,3 +70,15 @@ run-tests:
 
 	echo "Successfull!"
 
+.PHONY: run-benchmarks
+.ONESHELL:
+run-benchmarks:
+	@set -e
+	BUILD_DIR=build/bench
+	LD_PRELOAD_INTERNAL=$$BUILD_DIR/src/sfe/libsfe_preload.so
+	mkdir -p $$BUILD_DIR
+	( cd $$BUILD_DIR && cmake -DCMAKE_BUILD_TYPE=Release ${CURDIR} )
+	make -j16 -C $$BUILD_DIR bench_libsfe sfe_preload
+	$$BUILD_DIR/benchmarks/bench_libsfe
+	LD_PRELOAD=$$LD_PRELOAD_INTERNAL $$BUILD_DIR/benchmarks/bench_libsfe
+	echo "Successfull!"

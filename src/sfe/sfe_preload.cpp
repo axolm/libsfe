@@ -27,7 +27,7 @@ extern void* __cxa_allocate_exception(size_t thrown_size) throw() {
   }
 
   typedef void* (*cxa_allocate_exception_t)(size_t);
-  auto orig_cxa_allocate_exception =
+  static auto orig_cxa_allocate_exception =
       (cxa_allocate_exception_t)dlsym(RTLD_NEXT, "__cxa_allocate_exception");
 
   static constexpr size_t kAlign = alignof(std::max_align_t);
@@ -57,7 +57,7 @@ extern void __cxa_free_exception(void* thrown_object) throw() {
   }
 
   typedef void (*cxa_free_exception_t)(void*);
-  auto orig_cxa_free_exception =
+  static auto orig_cxa_free_exception =
       (cxa_free_exception_t)dlsym(RTLD_NEXT, "__cxa_free_exception");
   orig_cxa_free_exception(thrown_object);
 
