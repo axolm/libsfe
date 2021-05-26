@@ -37,7 +37,7 @@
     <address>Andrei Nekrashevich &lt;<a href="mailto:axolm13@gmail.com">axolm13@gmail.com</a>&gt;, &lt;<a href="mailto:axolm@yandex-team.ru">axolm@yandex-team.ru</a>&gt;</address>
     <address>Antony Polukhin &lt;<a href="mailto:antoshkka@gmail.com">antoshkka@gmail.com</a>&gt;, &lt;<a href="mailto:antoshkka@yandex-team.ru">antoshkka@yandex-team.ru</a>&gt;</address>
     <address>&nbsp;</address>
-    <address>Date: 2021-05-19</address>
+    <address>Date: 2021-05-25</address>
     <h1>Stacktrace from exception</h1>
 
     <h2>I. Introduction and Motivation</h2>
@@ -204,9 +204,9 @@ try {
     <p>To sum up: you need functionality from this paper when you have no control over the throw site or changing all the throw sites is time consuming.</p>
 
     <h2>IV. Design decisions</h2>
-    <h3>A. Off by default</h3>
+    <h3>A. Recommend to turn off by default</h3>
     <p>As was noted in mailing list discussion the proposed functionality increases memory consumption by exceptions. Moreover, it adds noticeable overhead on some platforms.</p>
-    <p>Because of that we propose to disable the functionality by default. To enable the stacktrace capturing on exception object construction for the current thread user would have to use <code>std::this_thread::capture_stacktraces_at_throw(bool enable) noexcept;</code>.</p>
+    <p>Because of that we recommend to disable the functionality by default in release builds and enable in debug. To enable the stacktrace capturing on exception object construction for the current thread user would have to use <code>std::this_thread::capture_stacktraces_at_throw(bool enable) noexcept;</code>.</p>
 
     <h3>B. Safety</h3>
     <p>Proposed <code>std::stacktrace::from_current_exception()</code> function is a diagnostic facility. It would be used in error processing and other places that are rarely tested.
@@ -248,7 +248,7 @@ try {
       <p>Add to the [stacktrace.basic.ctor] after the description of <code>current()</code> functions:</p>
 <div class="cppaddition">
     <pre>static basic_stacktrace from_current_exception(const allocator_type&amp; alloc = allocator_type()) noexcept;</pre>
-        <div class="desc"><i>Effects:</i> Returns a <code>basic_stacktrace</code> object with <code>frames_</code> storing the stacktrace of the evaluation at the point of construction of the currently handled exception, or an empty <code>basic_stacktrace</code> object if the initialization of <code>frames_</code> failed, stacktrace captures were not enabled by <code>this_thread::capture_stacktraces_at_throw(true)</code> for the throwing thread or no exception is being handled. <code>alloc</code> is passed to the constructor of the <code>frames_</code> object.</div>
+        <div class="desc"><i>Effects:</i> Returns a <code>basic_stacktrace</code> object with <code>frames_</code> storing the stacktrace of the evaluation at the point of construction of the currently handled exception, or an empty <code>basic_stacktrace</code> object if the initialization of <code>frames_</code> failed, stacktrace captures were not enabled for the throwing thread or no exception is being handled. <code>alloc</code> is passed to the constructor of the <code>frames_</code> object.</div>
         <div class="desc"><i>[Note:</i> Rethrowing exceptions with <code>throw;</code> do not change stacktrace, throwing exception with <code>throw e;</code>
         stores a new stacktrace.<i>- end note]</i></div>
 </div>
@@ -258,6 +258,7 @@ try {
 <div class="cppaddition">
     <pre>void this_thread::capture_stacktraces_at_throw(bool enable = true) noexcept;</pre>
         <div class="desc"><i>Effects:</i> Invoking the function with the <code>enable</code> parameter equal to <code>true</code> enables capturing stacktraces by the current thread of execution at exception object construction, disables otherwise.</div>
+        <div class="desc"><i>Recommended practice:</i> Implementations should disable the capturing stacktraces by the current thread of execution at exception object construction in release builds by default and enable in debug builds.</div>
 </div>
 
     <h2>VI. Revision History</h2>
