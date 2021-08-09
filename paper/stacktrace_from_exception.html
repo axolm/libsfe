@@ -12,9 +12,9 @@
         .addition.changed-deleted { color: green; background-color: #CFF0FC ; text-decoration: line-through; text-decoration: black double line-through; display: none; }
         .changed-added { background-color: #CFF0FC ;}
         .notes { background-color: gold ;}
-        pre { line-height: 1.2; font-size: 10pt; margin-top: 25px; }
+        pre { line-height: 1.2; margin-top: 25px; }
         .desc { margin-left: 35px; margin-top: 10px; padding:0; white-space: normal;}
-        body {max-width: 1024px; margin-left: 25px;}
+        body {max-width: 1024px; margin-left: 25px; font-size: 12pt; }
         del { background-color: red; }
         ins { background-color: lightgreen; }
         .sub { vertical-align: sub; }
@@ -30,14 +30,14 @@
     </style>
     </head>
     <body bgcolor="#ffffff">
-    <address>Document number: P2370R0</address>
+    <address>Document number: D2370R1</address>
     <address>Project: Programming Language C++</address>
     <address>Audience: LEWG Incubator, LEWG, LWG</address>
     <address>&nbsp;</address>
     <address>Andrei Nekrashevich &lt;<a href="mailto:axolm13@gmail.com">axolm13@gmail.com</a>&gt;, &lt;<a href="mailto:axolm@yandex-team.ru">axolm@yandex-team.ru</a>&gt;</address>
     <address>Antony Polukhin &lt;<a href="mailto:antoshkka@gmail.com">antoshkka@gmail.com</a>&gt;, &lt;<a href="mailto:antoshkka@yandex-team.ru">antoshkka@yandex-team.ru</a>&gt;</address>
     <address>&nbsp;</address>
-    <address>Date: 2021-05-25</address>
+    <address>Date: 2021-08-09</address>
     <h1>Stacktrace from exception</h1>
 
     <h2>I. Introduction and Motivation</h2>
@@ -148,6 +148,22 @@ Exception trace:
     <p>This can be done without breaking the ABI. Here's a prototype <a href="https://github.com/axolm/libsfe">libsfe</a> that replaces those functions and adds a stacktrace into each exception.
     Application can switch between exceptions with traces and without via adding and removing a <code>LD_PRELOAD=/usr/local/lib/libsfe_preload.so</code>.</p>
 
+    <p>To implement the functionality on Windows platform a new version of the <code>__CxxThrowException</code> function may be provided by the compiler runtime and to represent an exception with trace a new <code>dwExceptionCode</code> code may be reserved for the <code>RaiseException</code> [<a href="#MSVCExceptions">MSVCExceptions</a>]:</p> <pre>
+[[noreturn]] void __stdcall __CxxThrowException(void* pObj, _ThrowInfo* pInfo) {
+  if (std::this_thread::get_capture_stacktraces_at_throw()) {
+    struct ParamsNew { unsigned int magic; void* object, _ThrowInfo* info, std::stacktrace* trace; };
+    std::stacktrace trace = std::stacktrace::current();
+    ParamsNew throwParams = { ?????, pObj, pInfo, &trace };
+    RaiseException(0xE06D7364 /*!new dwExceptionCode code!*/, 1, 4, (const ULONG_PTR*)&throwParams);
+  }
+
+  struct ParamsOld { unsigned int magic; void* object, _ThrowInfo* info };
+  ParamsOld throwParams = { ?????, pObj, pInfo };
+  RaiseException(0xE06D7363, 1, 3, (const ULONG_PTR*)&throwParams);
+}
+    </pre>
+    <p></p>
+
     <h2>III. Use cases</h2>
     <p>The table bellow shows std::stacktrace related techniques to use in different cases</p>
     <table border=1>
@@ -190,7 +206,7 @@ throw TracedException&lt;std::bad_any_cast&gt;();
       <td>Need a way to diagnose a running application in production.</td>
       <td>Turn on <code>stacktrace::from_current_exception</code> in your error handling logic: <pre>
 try {
-    std::this_thread::capture_stacktraces_at_throw(trace_exceptions_var);
+    std::this_thread::set_capture_stacktraces_at_throw(trace_exceptions_var);
     process_request(request);
 } catch (const std::exception& e) {
     if (auto trace = std::stacktrace::from_current_exception(); trace)
@@ -206,7 +222,7 @@ try {
     <h2>IV. Design decisions</h2>
     <h3>A. Recommend to turn off by default</h3>
     <p>As was noted in mailing list discussion the proposed functionality increases memory consumption by exceptions. Moreover, it adds noticeable overhead on some platforms.</p>
-    <p>Because of that we recommend to disable the functionality by default in release builds and enable in debug. To enable the stacktrace capturing on exception object construction for the current thread user would have to use <code>std::this_thread::capture_stacktraces_at_throw(bool enable) noexcept;</code>.</p>
+    <p>Because of that we recommend to disable the functionality by default in release builds and enable in debug. To enable the stacktrace capturing on exception object construction for the current thread user would have to use <code>std::this_thread::set_capture_stacktraces_at_throw(bool enable) noexcept;</code>.</p>
 
     <h3>B. Safety</h3>
     <p>Proposed <code>std::stacktrace::from_current_exception()</code> function is a diagnostic facility. It would be used in error processing and other places that are rarely tested.
@@ -217,8 +233,8 @@ try {
     <code>std::stacktrace::from_current_exception()</code> may be called at runtime and it returns default constructed <code>std::stacktrace</code>.</p>
 
     <h3>D. Per thread ability to enable</h3>
-    <p>Consider some server under heavy load with 5 different executors. Something goes wrong with one of the executors. Capturing stacktraces on exception object construction and symbolizing them for all the executors could slow down the server significantly while only traces for 1 executor are needed. So the option should be thread specific.</p>
-    <p>Such approach scales well to coroutines. Call the <code>std::this_thread::capture_stacktraces_at_throw(bool enable) noexcept;</code> after context switch and you have per coroutine ability to enable or disable stacktrace capturing at the exception object construction.</p>
+    <p>Consider some server under heavy load with 5 different executors. Something goes wrong with one of the executors. Capturing of stacktraces on exception object construction and symbolizing them for all the executors could slow down the server significantly while only traces for 1 executor are needed. So the option should be thread specific.</p>
+    <p>Such approach scales well to coroutines. Call the <code>std::this_thread::set_capture_stacktraces_at_throw(bool enable) noexcept;</code> after context switch and you have per coroutine ability to enable or disable stacktrace capturing at the exception object construction.</p>
 
     <h2>V. Wording</h2>
       <p>Add to the [stacktrace.syn]:</p>
@@ -228,7 +244,8 @@ try {
     class basic_stacktrace;
 
 <span class="cppaddition">  namespace this_thread {
-    void capture_stacktraces_at_throw(bool enable = true) noexcept;
+    void set_capture_stacktraces_at_throw(bool enable = true) noexcept;
+    bool get_capture_stacktraces_at_throw() noexcept;
   }</span>
 
   // basic_stacktrace typedef names
@@ -248,33 +265,54 @@ try {
       <p>Add to the [stacktrace.basic.ctor] after the description of <code>current()</code> functions:</p>
 <div class="cppaddition">
     <pre>static basic_stacktrace from_current_exception(const allocator_type&amp; alloc = allocator_type()) noexcept;</pre>
-        <div class="desc"><i>Effects:</i> Returns a <code>basic_stacktrace</code> object with <code>frames_</code> storing the stacktrace of the evaluation at the point of construction of the currently handled exception, or an empty <code>basic_stacktrace</code> object if the initialization of <code>frames_</code> failed, stacktrace captures were not enabled for the throwing thread or no exception is being handled. <code>alloc</code> is passed to the constructor of the <code>frames_</code> object.</div>
-        <div class="desc"><i>[Note:</i> Rethrowing exceptions with <code>throw;</code> do not change stacktrace, throwing exception with <code>throw e;</code>
-        stores a new stacktrace.<i>- end note]</i></div>
+        <div class="desc"><i>Effects:</i> Returns a <code>basic_stacktrace</code> object with <code>frames_</code> containing a stacktrace captured at the point of construction of the currently handled exception object, or an empty <code>basic_stacktrace</code> object if:
+          <ul>
+              <li>the initialization of <code>frames_</code> failed,</li>
+              <li>or stacktrace captures are not enabled for the throwing thread,</li>
+              <li>or no exception is being handled,</li>
+              <li>or due to implementation-defined reasons.</li>
+          </ul>
+        <code>alloc</code> is passed to the constructor of the <code>frames_</code> object.</div>
+        <div class="desc"><i>[Note:</i> Rethrowing exception with <code>throw;</code> does not change the captured stacktrace; throwing an exception with <code>throw e;</code>
+        captures a new stacktrace.<i>- end note]</i></div>
 </div>
 
       <p>Add section [stacktrace.thread.this] before the [stacktrace.basic.mod] section:</p>
       <h3 class="cppaddition">Namespace this_thread <span class="right">[stacktrace.thread.this]</span></h3>
 <div class="cppaddition">
-    <pre>void this_thread::capture_stacktraces_at_throw(bool enable = true) noexcept;</pre>
-        <div class="desc"><i>Effects:</i> Invoking the function with the <code>enable</code> parameter equal to <code>true</code> enables capturing stacktraces by the current thread of execution at exception object construction, disables otherwise.</div>
-        <div class="desc"><i>Recommended practice:</i> Implementations should disable the capturing stacktraces by the current thread of execution at exception object construction in release builds by default and enable in debug builds.</div>
+    <pre>void this_thread::set_capture_stacktraces_at_throw(bool enable = true) noexcept;</pre>
+        <div class="desc"><i>Effects:</i> Invoking the function with the <code>enable</code> parameter equal to <code>true</code> enables capturing of stacktraces by the current thread of execution at exception object construction, disables otherwise. It is implementation-defined whether the capturing of stacktraces by the current thread of execution is enabled if the <code>set_capture_stacktraces_at_throw</code> was not invoked in the current thread of execution.</div>
+</div><div class="cppaddition">
+    <pre>bool this_thread::get_capture_stacktraces_at_throw() noexcept;</pre>
+        <div class="desc"><i>Returns:</i> whether the capturing of stacktraces by the current thread of execution is enabled.</div>
 </div>
 
     <h2>VI. Revision History</h2>
+    <p>Revision 1:</p>
+    <ul>
+        <li>Renamed <code>capture_stacktraces_at_throw</code> into <code>set_capture_stacktraces_at_throw</code>, added <code>get_capture_stacktraces_at_throw</code> function.</li>
+        <li>Consistent usage of "exception object" and "capturing of stacktraces".</li>
+        <li>Added an implementation idea for Windows.</li>
+        <li>Minor wording clarifications and cleanups.</li>
+    </ul>
     <p>Revision 0:</p>
     <ul>
         <li>Initial proposal.</li>
     </ul>
+    
+    <h2>VII. Acknowledgements</h2>
+    <p>Many thanks to all the people who helped with the paper! Special thanks to Jens Maurer for numerous comments and suggestions.</p>
 
-    <h2>VII. References</h2>
+    <h2>VIII. References</h2>
     <p>[<a name="libsfe">libsfe</a>] Proof of concept implementation. Available online at <a href="https://github.com/axolm/libsfe">https://github.com/axolm/libsfe</a>.</p>
+    
+    <p>[<a name="MSVCExceptions">MSVCExceptions</a>] <a href="https://www.codeproject.com/Articles/175482/Compiler-Internals-How-Try-Catch-Throw-are-Interpr">"Compiler Internals - How Try/Catch/Throw are Interpreted by the Microsoft Compiler"</a> by Yanick Salzmann.</p>
 
 <script type="text/javascript">
     function colorize_texts(texts) {
     for (var i = 0; i < texts.length; ++i) {
         var text = texts[i].innerHTML;
-        text = text.replace(/namespace|if |using|async|do\n|while|resumable|co_await|co_yield|co_return|await|yield|try|throw |sizeof|long|enum|void|constexpr|extern|noexcept|bool|template|class |struct |auto|const |typename|explicit|public|private|operator|#include|inline|catch|typedef|static_assert|int|return|union|static_cast|static |dynamic_cast/g,"<span class='cppkeyword'>$&<\/span>");
+        text = text.replace(/namespace|if |using|async|do\n|while|resumable|co_await|co_yield|co_return|await|yield|try |throw |sizeof|long|enum|void|constexpr|extern|noexcept|bool|template|class |struct |auto|const |typename|explicit|public|private|operator|#include|inline|catch|typedef|static_assert|int| return|union|static_cast|static |dynamic_cast/g,"<span class='cppkeyword'>$&<\/span>");
         text = text.replace(/\/\/[\s\S]+?\n/g,"<span class='cppcomment'>$&<\/span>");
         texts[i].innerHTML = text;
     }
