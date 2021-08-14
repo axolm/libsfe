@@ -30,14 +30,14 @@
     </style>
     </head>
     <body bgcolor="#ffffff">
-    <address>Document number: D2370R1</address>
+    <address>Document number: P2370R1</address>
     <address>Project: Programming Language C++</address>
     <address>Audience: LEWG Incubator, LEWG, LWG</address>
     <address>&nbsp;</address>
     <address>Andrei Nekrashevich &lt;<a href="mailto:axolm13@gmail.com">axolm13@gmail.com</a>&gt;, &lt;<a href="mailto:axolm@yandex-team.ru">axolm@yandex-team.ru</a>&gt;</address>
     <address>Antony Polukhin &lt;<a href="mailto:antoshkka@gmail.com">antoshkka@gmail.com</a>&gt;, &lt;<a href="mailto:antoshkka@yandex-team.ru">antoshkka@yandex-team.ru</a>&gt;</address>
     <address>&nbsp;</address>
-    <address>Date: 2021-08-11</address>
+    <address>Date: 2021-08-14</address>
     <h1>Stacktrace from exception</h1>
 
     <h2>I. Introduction and Motivation</h2>
@@ -269,10 +269,10 @@ try {
         captured at the point of construction of the currently handled exception object and stored in that exception object,
         or an empty <code>basic_stacktrace</code> object if:
           <ul>
-              <li>the initialization of <code>frames_</code> failed,</li>
-              <li>or stacktrace captures are not enabled for the throwing thread,</li>
-              <li>or no exception is being handled,</li>
-              <li>or due to implementation-defined reasons.</li>
+              <li>the initialization of <code>frames_</code> failed, or</li>
+              <li>stacktrace captures are not enabled for the throwing thread, or</li>
+              <li>no exception is being handled, or</li>
+              <li>due to implementation-defined reasons.</li>
           </ul>
         <code>alloc</code> is passed to the constructor of the <code>frames_</code> object.</div>
         <div class="desc">Rethrowing an exception using a <code>throw</code>-expression with no operand does not alter the captured stacktrace.</div>
@@ -282,11 +282,12 @@ try {
       <h3 class="cppaddition">Namespace this_thread <span class="right">[stacktrace.thread.this]</span></h3>
 <div class="cppaddition">
     <pre>void this_thread::set_capture_stacktraces_at_throw(bool enable = true) noexcept;</pre>
-        <div class="desc"><i>Effects:</i> Invoking the function with the <code>enable</code> parameter equal to <code>true</code> enables capturing of stacktraces by the current thread of execution at exception object construction, disables otherwise. It is implementation-defined whether the capturing of stacktraces by the current thread of execution is enabled if the <code>set_capture_stacktraces_at_throw</code> was not invoked in the current thread of execution.</div>
+        <div class="desc"><i>Effects:</i> Invoking the function with the <code>enable</code> parameter equal to <code>true</code> enables capturing of stacktraces by the current thread of execution at exception object construction, disables otherwise. It is implementation-defined whether the capturing of stacktraces by the current thread of execution is enabled if <code>set_capture_stacktraces_at_throw</code> has not been invoked in the current thread of execution.</div>
 </div><div class="cppaddition">
     <pre>bool this_thread::get_capture_stacktraces_at_throw() noexcept;</pre>
-        <div class="desc"><i>Returns:</i> whether the capturing of stacktraces by the current thread of execution is enabled and <code>from_current_exception</code> may return an non empty <code>basic_stacktrace</code>.</div>
+        <div class="desc"><i>Returns:</i> whether the capturing of stacktraces by the current thread of execution is enabled and <code>from_current_exception</code> may return a non empty <code>basic_stacktrace</code>.</div>
 </div>
+      <p>Adjust value of the <code class="cppaddition">__cpp_­lib_­stacktrace</code> macro in [version.syn] to the date of adoption.</p>
 
     <h2>VI. Revision History</h2>
     <p>Revision 1:</p>
@@ -294,7 +295,7 @@ try {
         <li>Renamed <code>capture_stacktraces_at_throw</code> into <code>set_capture_stacktraces_at_throw</code>, added <code>get_capture_stacktraces_at_throw</code> function.</li>
         <li>Consistent usage of "exception object" and "capturing of stacktraces".</li>
         <li>Added an implementation idea for Windows.</li>
-        <li>Minor wording clarifications and cleanups.</li>
+        <li>Minor wording clarifications, feature test macro notes and cleanups.</li>
     </ul>
     <p>Revision 0:</p>
     <ul>
