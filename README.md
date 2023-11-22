@@ -1,3 +1,5 @@
+Just playground. Do not use in production!
+
 # libsfe
 Library for extracting stacktrace from exception.
 
